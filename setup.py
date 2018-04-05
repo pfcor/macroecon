@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="macroecon",
-    version="0.1.1",
+    version="0.1.2",
     url="https://github.com/pfcor/macroecon.git",
 
     author="Pedro Correia",
