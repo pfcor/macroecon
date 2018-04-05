@@ -4,4 +4,4 @@ __version__ = '0.1.1'
 __author__ = 'Pedro Correia <pedrocorreia.rs@gmail.com>'
 __all__ = []
 
-from macroecon.ipea_indicadores import ipea_indicadores
+from macroecon.ipea_indicadores import *

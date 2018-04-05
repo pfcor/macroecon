@@ -1,7 +1,7 @@
 # indicadores de interesse
 # TODO colocar isso em arquivo ou base de dados separada
 # com mais informaÃ§Ãµes sobre cada indicador
-indicadores = {
+ipea_indicadores = {
     "ICC": 40080,
     "ICEA": 40081,
     "INEC": 40872,
