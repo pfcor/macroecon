@@ -1,3 +1,7 @@
+*.ipynb
+.vscode/
+gecko*
+
 # Compiled python modules.
 *.pyc
 

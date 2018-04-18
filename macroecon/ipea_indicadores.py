@@ -11,7 +11,8 @@ ipea_indicadores = {
     "IPCA_ab": 39861,
     "RendimentoMedio": 1347352654,
     "SelicMes": 32241,
-    "TaxaDesocupacao": 1347352645
+    "TaxaDesocupacao": 1347352645,
+    'test': 1319263849
 }
 
 ### imports
@@ -26,24 +27,41 @@ import pandas as pd
 import datetime as dt
 
 ### funcs
-def ipeadata(indicador):
+def get_header(indicador):
+    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}&module=M".format(indicador)
+
+    r = requests.get(url)
+    if r.status_code != 200:
+        print('data extraction error - status code {}'.format(r.status_code))
+        return
+    soup = BeautifulSoup(r.text, 'html.parser')
+
+    header = soup.find('table').find_all('td')[-1]
+    bs = [b.string for b in header.find_all('b')]
+    head = header.text
+    return head
+
+def get_series(indicador):
     
     # montando url
-    try:
-        ind = indicadores[indicador]
-    except KeyError:
-        print('indicador nao encontrado.\n\nindicadores disponiveis:')
-        for ind in indicadores:
-            print('  - {}'.format(ind))      
-        return
-    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}&module=M".format(ind)
+    if isinstance(indicador, str):
+        try:
+            indicador = ipea_indicadores[indicador] #db connection
+        except KeyError:
+            print('indicador nao encontrado.\n\nindicadores disponiveis:')
+            for ind in ipea_indicadores:
+                print('  - {}'.format(ind))      
+            return
+
+    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}&module=M".format(indicador)
     
     # obtendo os dados
     r = requests.get(url)
     if r.status_code != 200:
-        print('erro na extraÃ§Ã£o dos dados - status code {}'.format(r.status_code))
+        print('data extraction error - status code {}'.format(r.status_code))
         return
-    soup = BeautifulSoup(r.text,  'lxml')
+    soup = BeautifulSoup(r.text, 'html.parser')
+
     table = soup.find(id="grd")
     rows = table.find('tr').find_all('tr')[3:] # os tres primeiros 'tr's sÃ£o de cabecalho    
     
@@ -53,7 +71,7 @@ def ipeadata(indicador):
     }
 
     for row in rows:
-        datum = tuple(row.find_all('td')[i].text for i in [0,1])
+        datum = tuple(r.text for r in row.find_all('td'))
         if not datum[0]:
             break
         try:    
@@ -69,13 +87,14 @@ def ipeadata(indicador):
         
     return pd.DataFrame(data[indicador], index=data['Data'], columns=[indicador])
 
+
 def ipea_dataset(indicadores):
     dataset = pd.DataFrame()
     print('Iniciando coleta de dados')
     for indicador in indicadores:
         print('  - {}:'.format(indicador), end=' ')
         try:
-            ind_data = ipeadata(indicador)
+            ind_data = get_series(indicador)
             dataset = pd.concat([dataset, ind_data], axis=1)
             print('OK')
         except Exception as e:
@@ -89,6 +108,8 @@ def ipea_dataset(indicadores):
 
 if __name__ == '__main__':
     pass
+
+    print(get_series('ICC'))
 
     """
     print('Gerando base de dados - indicadores IPEA')
