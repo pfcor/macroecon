@@ -91,6 +91,7 @@ ids = [
 
 ids = [item for sublist in ids for item in sublist]
 
+"""
 # web scraping
 import requests
 from bs4 import BeautifulSoup
@@ -197,3 +198,4 @@ for i in test_inds:
 # print(m)
 # for i in range(len(bs[1:])):
 
+"""
