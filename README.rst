@@ -15,7 +15,7 @@ Still in early development. Many changes will come to the API.
 
 Implemented data sources:
 
-[Ipea](http://www.ipeadata.gov.br) 
+- Ipea: http://www.ipeadata.gov.br
 
 Usage
 -----
