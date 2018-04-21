@@ -14,7 +14,8 @@ Interface with macroeconomic data sources from Brasil.
 Still in early development. Many changes will come to the API.
 
 Implemented data sources:
-- [Ipea](http://www.ipeadata.com.br) 
+
+[Ipea](http://www.ipeadata.gov.br) 
 
 Usage
 -----
