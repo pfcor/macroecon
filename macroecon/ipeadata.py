@@ -1,5 +1,5 @@
 """
-Functions for retrieving data from IPEA's portal: http://www.ipeadata.gov.br
+Interface for retrieving data from IPEA's portal: http://www.ipeadata.gov.br
 
 @author: Pedro Correia
 """
@@ -12,12 +12,15 @@ from bs4 import BeautifulSoup
 # data manipulation
 import pandas as pd
 
+# db connection
+import pymongo
+
 # auxlibs
 import datetime as dt
 import re
 
 
-### aux data
+### aux data (put this in a conf file perhaps?)
 
 pt2en = {
     'fonte': 'source',
@@ -36,8 +39,68 @@ periodicity_code = {
     'Trimestral': 'T'
 }
 
+db_connection_string = "mongodb://user:ieG3hWVxMsWNME3P@macroecon-shard-00-00-ee0yx.mongodb.net:27017,macroecon-shard-00-01-ee0yx.mongodb.net:27017,macroecon-shard-00-02-ee0yx.mongodb.net:27017/admin?replicaSet=Macroecon-shard-0&ssl=true"
+
 
 ### functions
+
+# aux functions
+
+def get_page(series_id):
+    """
+    Returns soup object referring to the page of the series 
+    especified by its id
+    """
+
+    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}".format(series_id)
+   
+    try:
+        r = requests.get(url)    
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+    except Exception as e:
+        print('Unable to parse page:', e)
+        raise
+
+    return soup
+
+def extract_source(value):
+    """
+    Source field info extraction from value 
+    """
+
+    if 'href' in value:
+        m = re.search(r"href=\"(.+?)\">(.+?)<", value)
+        link = m.group(1)
+        full_source = m.group(2)
+    else:
+        link = None
+        full_source = value
+
+
+    source_name = full_source.split(' (')[0]    
+    if ',' in full_source:
+        source_name = full_source.split(',')[0]
+        
+    try:
+        m = re.search(r"\((.+?)\)", full_source)
+        # sometimes, the source short name is accompanied by
+        # by the initials of the research group separated by
+        # a '/'. thus the split below.
+        short_name = m.group(1).split('/')[0].strip() 
+    except:
+        short_name = None
+    value = {
+        'link': link,
+        'full_source': full_source,
+        'source_name': source_name,
+        'short_name': short_name
+    }
+
+    return value
+
+
+# main funtions
 
 def get_series_info(series_id):
     """
@@ -46,21 +109,20 @@ def get_series_info(series_id):
     updated.
     """
 
-    # point of connection with ipeadata's portal
-    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}".format(series_id)
-
-    r = requests.get(url)
-    if r.status_code != 200:
-        print('data extraction error - status code {}'.format(r.status_code))
-        raise
     try:
-        soup = BeautifulSoup(r.text, 'html.parser')    
-        header = str(soup.find('table').find_all('td')[-1]).split('<br/>') # parsing the page and extracting 
+        series_id = int(series_id)
     except Exception as e:
-        print('Unable to parse page:', e)
+        print('Invalid series_id format.')
         raise
+    
+    # get page html
+    soup = get_page(series_id)
 
-    series_info = {}
+    # getting the header on the series page, where the metadata can be found
+    # the '<br/>' tag separates the lines, so we get a list of metadata lines
+    header = str(soup.find('table').find_all('td')[-1]).split('<br/>') # parsing the page and extracting 
+
+    series_info = {'series_id': series_id}
     for i, h in enumerate(header):
         try:
             if i == 0:
@@ -74,29 +136,7 @@ def get_series_info(series_id):
 
                 # check for links 
                 if field == 'fonte': # if it's the source field, it's dealt with differently
-                    if 'href' in value:
-                        m = re.search(r"href=\"(.+?)\">(.+?)<", value)
-                        link = m.group(1)
-                        full_source = m.group(2)
-                    else:
-                        link = None
-                        full_source = value
-                    
-                    source_name = full_source.split(',')[0]
-                    try:
-                        m = re.search(r"\((.+?)\)", full_source)
-                        # sometimes, the source short name is accompanied by
-                        # by the initials of the research group separated by
-                        # a '/'. thus the split below.
-                        short_name = m.group(1).split('/')[0].strip() 
-                    except:
-                        short_name = None
-                    value = {
-                        'link': link,
-                        'full_source': full_source,
-                        'source_name': source_name,
-                        'short_name': short_name
-                    }
+                    value = extract_source(value)
                 
                 elif field == 'atualizado_em':
                     try:
@@ -124,9 +164,10 @@ def get_series_info(series_id):
     
     #TODO > think of way to determine series health using the line below plus the 'last_updated' field
     # series_info['interrupted'] = 'série interrompida' in series_info['comentário'].lower()
+    if 'série interrompida' in series_info['comment'].lower():
+        series_info['interrupted'] = True
 
     return series_info
-
 
 def get_series_data(series_id, date_as_index=False):
     """
@@ -136,15 +177,10 @@ def get_series_data(series_id, date_as_index=False):
     If a problem happens in the parsing, e.g. the date column, None is returned 
     """
 
-    # point of connection with ipeadata's portal
-    url = "http://www.ipeadata.gov.br/ExibeSerie.aspx?serid={}".format(series_id)
-    
-    r = requests.get(url)
-    if r.status_code != 200:
-        print('data extraction error - status code {}'.format(r.status_code))
-        return
-    
-    soup = BeautifulSoup(r.text, 'html.parser')
+    # TODO: use this periodicity to correctly parse the dates
+    periodicity = get_series_info(series_id)['periodicity']
+
+    soup = get_page(series_id)
     table = soup.find(id="grd") # finding the table which contains the data
     rows = table.find('tr').find_all('tr')[3:] # the first three '<tr>'s are headers    
     
@@ -180,24 +216,69 @@ def get_series_data(series_id, date_as_index=False):
         return pd.DataFrame(data[series_id], index=data['date'], columns=[series_id])
     return pd.DataFrame(data)
 
+def search(query, n=10, full_source=False, comment=False, periodicity=False, last_updated=False):
+    client = pymongo.MongoClient(db_connection_string)
+    ipea_series = client["ipeadata"]["series_info"]
+
+    # text search
+    match = {
+        '$match': {
+            '$text': {'$search': query}
+        }
+    }
+
+    # scoring, sorting and limiting returns by "relevance" of text matching
+    text_score = {
+        '$addFields': {
+            'score': {'$meta': 'textScore'}
+        }
+    }
+    sort_by_score = {
+        '$sort': {
+            'score': -1
+        }
+    }
+    series_returned = {
+        '$limit': n
+    }
+
+    # fields returned for each series
+    project = {
+        '_id': 0,
+        'id': '$series_id',
+        'name': '$series_name'
+    }
+    if full_source:
+        project.update({'source': 1})
+    else:
+        project.update({'source': '$source.source_name'})
+    if comment:
+        project.update({'comment': 1})
+    if periodicity:
+        project.update({'periodicity': 1})
+    if last_updated:
+        project.update({'last_updated': 1})
+
+    
+    project = {
+        '$project': project
+    }
+
+    # aggregation pipeline
+    series = ipea_series.aggregate([
+        match,
+        text_score,
+        sort_by_score,
+        series_returned,
+        project
+    ])
+
+    return list(series)
 
 
 if __name__ == '__main__':
-    import pprint, random
-    series_id = 75803245#40080
-    # series_info = get_series_info(series_id)
-    # pprint.pprint(series_info)
-    # series_data = get_series_data(series_id)
-    # print(series_data)
-    from ipeadata_indicadores import ids
+    import pprint
 
-    test_inds = [random.randint(0, 8000) for i in range(50)]
-    for i in test_inds:
-        header = get_series_info(ids[i])
-        try:
-            pprint.pprint(header['periodicity'])
-            pprint.pprint(header['date_range'])            
-        except Exception as e:
-            # pprint.pprint(header['fonte'])
-            print(e)
-        # break
+    for s in search('ipca'):
+        pprint.pprint(s)
+        print()
